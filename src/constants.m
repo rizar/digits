@@ -1,0 +1,6 @@
+function [ values ] = constants()
+    values = struct('n_features', 14,...
+                    'window_size', 256,...
+                    'window_step', 128);
+end
+
