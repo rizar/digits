@@ -9,7 +9,7 @@ function [ uttrs, labels ] = loaddir(path)
     current = 0;
     
     for i=1:length(files);
-        sig = audioread(strcat('sounds/', char(files(i).name)));
+        sig = audioread(strcat(path, '/', char(files(i).name)));
         try;
             digits = cut(sig);
             for c=1:cs.n_classes;
