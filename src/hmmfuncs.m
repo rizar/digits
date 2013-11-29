@@ -1,9 +1,10 @@
-function [functions] = hmm()
+function [functions] = hmmfuncs()
     functions = struct('create_model', @create_model,...
                        'check_model', @check_model,...
                        'generate_sequence', @generate_sequence,...
                        'generate_n_sequences', @generate_n_sequences,...
                        'generate_models', @generate_models,...
+                       'naive_model', @naive_model,...
                        'mixture_likelihood', @mixture_likelihood,...
                        'state_likelihood', @state_likelihood,...
                        'sequence_log_likelihood', @sequence_log_likelihood,...
@@ -13,7 +14,8 @@ function [functions] = hmm()
                        'improve_model', @improve_model,...
                        'improve_model_until', @improve_model_until,...
                        'draw_model', @draw_model,...
-                       'draw_sequence', @draw_sequence);
+                       'draw_sequence', @draw_sequence,...
+                       'draw_component_part', @draw_component_part);
 end
 
 function [params] = internal_params()
@@ -153,7 +155,7 @@ function [res] = state_component_likelihoods(model, state, output)
 end
 
 function [prefix_probs, scalers] = forward_procedure(model, outputs)
-    len = length(outputs);
+    len = size(outputs, 2);
     n_states = size(model.transitions, 1);
     
     prefix_probs = zeros(len, n_states);    
@@ -176,7 +178,7 @@ function [prefix_probs, scalers] = forward_procedure(model, outputs)
 end
 
 function [suffix_probs] = backward_procedure(model, outputs, scalers)
-    len = length(outputs);
+    len = size(outputs, 2);
     n_states = size(model.transitions, 1);
     
     suffix_probs = zeros(len, n_states);
@@ -196,15 +198,56 @@ end
 
 function [res] = sequence_log_likelihood(model, outputs)
     [prefix_probs, scalers] = forward_procedure(model, outputs);
-    total = sum(prefix_probs(length(outputs), :));
+    total = sum(prefix_probs(size(outputs, 2), :));
     res = log(total) - sum(log(scalers));
 end
 
-function [res] = n_sequences_log_likelihood(model, outputs)
+function [res] = n_sequences_log_likelihood(model, all_outputs)
     res = 0;
-    for i = 1:length(outputs);
-        res = res + sequence_log_likelihood(model, outputs{i});
+    for i = 1:length(all_outputs);
+        res = res + sequence_log_likelihood(model, all_outputs{i});
     end;
+end
+
+function [result] = naive_model(n_states, n_components, all_outputs)
+    average_len = length([all_outputs{:}]) / n_states;
+    n_features = size(all_outputs{1}, 1);
+    
+    A = zeros(n_states, n_states);
+    for i=1:n_states;
+        A(i, i) = (average_len - 1) / average_len;
+        A(i, i+1:n_states) = (1 - A(i, i)) / (n_states - i);
+    end;
+    A(n_states, n_states) = 1;
+    
+    MN = zeros(n_states, n_components, n_features);
+    VS = zeros(n_states, n_components, n_features);
+    
+    for i=1:n_states;
+        take = cell(length(all_outputs));
+        for k=1:length(all_outputs);
+            len = size(all_outputs{k}, 2);
+            mask = false(1, len);
+            start = floor(len * (i - 1) / n_states) + 1;
+            finish = floor(len * i / n_states);
+            mask(start:finish) = true;
+            take{k} = mask;
+        end;
+        all_data = [all_outputs{:}];
+        big_mask = [take{:}];
+        state_data = all_data(:, big_mask > 0);
+        
+        center = mean(state_data, 2);
+        variances = var(state_data, 1, 2);
+        
+        means = mvnrnd(center, diag(variances / 4), n_components);
+        
+        MN(i, :, :) = means;
+        VS(i, :, :) = repmat(variances', n_components, 1);
+    end;
+    
+    result = create_model(A, ones(n_states, n_components) ./ n_components, MN, VS);
+    check_model(result);
 end
 
 function [result] = improve_model(model, all_outputs)
@@ -278,6 +321,8 @@ function [result] = improve_model(model, all_outputs)
     result.means = bsxfun(@rdivide, state_component_feature_sum, state_component_expect);
     result.variances = bsxfun(@rdivide, state_component_feature_square_sum, state_component_expect) -...
                             result.means .^ 2 + ones(n_states, n_components, n_features) * ip.variance_smoother;
+                        
+    check_model(result);
 end
 
 function [res] = improve_model_until(model, data, epsilon, n_iters)
@@ -331,5 +376,15 @@ function [] = draw_sequence(outputs)
         rectangle('Position', [(outputs(:, i)' - 0.15) 0.3 0.3],...
                   'Curvature', [1 1],...
                   'FaceColor', [0 0 0]);
+    end;
+end
+
+function [] = draw_component_part(model, state, component, outputs)
+    for t=1:size(outputs, 2)
+        likes = state_component_likelihoods(model, state, outputs(:, t)');
+        probs = likes / sum(likes);
+        rectangle('Position', [(outputs(:, t)' - 0.15) 0.3 0.3],...
+                  'Curvature', [1 1],...
+                  'FaceColor', repmat(probs(component), 1, 3));
     end;
 end

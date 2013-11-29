@@ -1,4 +1,4 @@
-function [ uttrs, labels ] = loaddir(path)
+function [ uttrs, features, labels ] = loaddir(path)
     cs = constants();
 
     files = dir(path);
@@ -23,6 +23,15 @@ function [ uttrs, labels ] = loaddir(path)
     end;
     
     uttrs = uttrs(1:current);
+    features = cellfun(@featurize, uttrs, 'UniformOutput', false);
     labels = labels(1:current);
+end
+
+function [features] = featurize(utterance)
+    cs = constants();
+    features = zeros(cs.n_features, length(utterance) / cs.window_size);
+    for i=1:size(features, 2)
+        features(:, i) = extract(utterance(cs.window_size * (i - 1) + 1:cs.window_size * i), 0, 0);
+    end;
 end
 
