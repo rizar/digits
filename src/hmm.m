@@ -11,12 +11,15 @@ function [functions] = hmm()
                        'forward_procedure', @forward_procedure,...
                        'backward_procedure', @backward_procedure,...
                        'improve_model', @improve_model,...
-                       'improve_model_until', @improve_model_until)
+                       'improve_model_until', @improve_model_until,...
+                       'draw_model', @draw_model,...
+                       'draw_sequence', @draw_sequence);
 end
 
 function [params] = internal_params()
     params = struct('transition_smoother', 0.01,...
-                    'mixture_smoother', 0.01);
+                    'mixture_smoother', 0.01,...
+                    'variance_smoother', 0.01);
 end
 
 function [model] = create_model(A, MX, MN, VS)
@@ -125,10 +128,11 @@ function [res] = likelihoods(means, variances, output)
     res = zeros(1, n_components);
     for i=1:n_components;
         centered = output - means(i, :);
-        weighted = centered .^ 2 ./ variances(i, :);
-        res(i) = exp(-0.5 * sum(weighted)) / sqrt(prod(variances(i, :)));
+        dist2 = sum(centered .^ 2 ./ variances(i, :));
+        res(i) = exp(-0.5 * dist2) / sqrt(2 * pi * prod(variances(i, :)));
     end;
-end
+    assert(all(-1e-7 <= res));
+ end
 
 function [res] = mixture_likelihood(probs, means, variances, output)
     likes = likelihoods(means, variances, output);
@@ -176,7 +180,7 @@ function [suffix_probs] = backward_procedure(model, outputs, scalers)
     n_states = size(model.transitions, 1);
     
     suffix_probs = zeros(len, n_states);
-    suffix_probs(len, n_states) = scalers(len);
+    suffix_probs(len, :) = scalers(len);
     
     for t=len-1:-1:1;
         for i=1:n_states;
@@ -209,8 +213,9 @@ function [result] = improve_model(model, all_outputs)
     n_features = size(model.means, 3);
     
     ip = internal_params();
-    
+
     state_expect = zeros(n_states, 1);
+    last_expect = zeros(n_states, 1);
     transition_expect = zeros(n_states, n_states);
     
     state_component_expect = zeros(n_states, n_components);
@@ -225,8 +230,10 @@ function [result] = improve_model(model, all_outputs)
         for t=1:size(outputs, 2);
             for i=1:n_states;
                 state_prob = prefix_probs(t, i) * suffix_probs(t, i) / scalers(t);
-                state_expect(i) = state_expect(i) + state_prob;
+                assert(-1e-7 <= state_prob && state_prob <= 1 + 1e-7);
                 
+                state_expect(i) = state_expect(i) + state_prob;
+                                
                 component_probs = state_component_likelihoods(model, i, outputs(:, t)');
                 component_probs = component_probs ./ sum(component_probs);
                 state_component_expect(i, :) = state_component_expect(i, :) + state_prob * component_probs;
@@ -239,27 +246,30 @@ function [result] = improve_model(model, all_outputs)
                 state_component_feature_square_sum(i, :, :) = state_component_feature_square_sum(i, :, :) +...
                     shiftdim(state_prob * weighted_squares, -1);
                                    
-                if t + 1 > size(outputs, 2);
-                    continue;
-                end;
-                                            
-                for j=1:n_states;
-                    transition_expect(i, j) = transition_expect(i, j) +...
-                        prefix_probs(t, i) * suffix_probs(t + 1, j) *...
-                        model.transitions(i, j) * state_likelihood(model, j, outputs(:, t + 1)');
+                if t + 1 <= size(outputs, 2);
+                    for j=1:n_states;
+                        transition_expect(i, j) = transition_expect(i, j) +...
+                            prefix_probs(t, i) * suffix_probs(t + 1, j) *...
+                            model.transitions(i, j) * state_likelihood(model, j, outputs(:, t + 1)');
+                    end;
+                else
+                    last_expect(i) = last_expect(i) + state_prob;
                 end;
             end;
         end;
     end;
+    
+    assert(abs(sum(state_expect) - size([all_outputs{:}], 2)) < 1e-7);
     
     result.transitions = model.transitions;    
     for i=1:n_states;
         for j=i:n_states;
             result.transitions(i, j) =...
                 (transition_expect(i, j) + ip.transition_smoother) /...
-                (state_expect(i) + (n_states - i + 1) * ip.transition_smoother);
+                (state_expect(i) - last_expect(i) + (n_states - i + 1) * ip.transition_smoother);
         end;
     end;
+    
     
     result.mixtures = bsxfun(@rdivide,...
         state_component_expect + ip.mixture_smoother,...
@@ -267,13 +277,21 @@ function [result] = improve_model(model, all_outputs)
     
     result.means = bsxfun(@rdivide, state_component_feature_sum, state_component_expect);
     result.variances = bsxfun(@rdivide, state_component_feature_square_sum, state_component_expect) -...
-                            result.means .^ 2;
+                            result.means .^ 2 + ones(n_states, n_components, n_features) * ip.variance_smoother;
 end
 
-function [res] = improve_model_until(model, data, epsilon)
+function [res] = improve_model_until(model, data, epsilon, n_iters)
+    if ~exist('epsilon', 'var')
+        n_iters = 1;
+        epsilon = 0.1;
+    end;
+    if ~exist('n_iters', 'var')
+        n_iters = 1000;
+    end;
+    
     cur_quality = n_sequences_log_likelihood(model, data)
     res = model;
-    while 1
+    while n_iters > 0;
         res = improve_model(res, data);
         new_quality = n_sequences_log_likelihood(res, data)
         
@@ -282,5 +300,36 @@ function [res] = improve_model_until(model, data, epsilon)
         end;
         
         cur_quality = new_quality;
+        n_iters = n_iters - 1;
+    end;
+end
+
+function [] = draw_state(model, state, color)
+    n_components = size(model.mixtures, 2);
+    for i=1:n_components;
+        center = squeeze(model.means(state, i, :))';
+        variances = squeeze(model.variances(state, i, :))';
+        corner = center - sqrt(variances);
+        rectangle('Position', [corner 2 * sqrt(variances)],...
+                  'Curvature', [1 1],...
+                  'EdgeColor', color,...
+                  'LineWidth', 2)
+        text(center(1), center(2), mat2str(model.mixtures(state, i), 2));             
+    end;
+end
+
+function [] = draw_model(model)
+    n_states = size(model.transitions, 1);
+    colors = [1 0 0; 0 1 0; 0 0 1];
+    for i=1:n_states
+        draw_state(model, i, colors(i, :));
+    end;
+end
+
+function [] = draw_sequence(outputs)
+    for i=1:size(outputs, 2)
+        rectangle('Position', [(outputs(:, i)' - 0.15) 0.3 0.3],...
+                  'Curvature', [1 1],...
+                  'FaceColor', [0 0 0]);
     end;
 end
