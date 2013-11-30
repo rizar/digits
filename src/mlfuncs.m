@@ -99,14 +99,17 @@ function [report] = cross_validate(features, labels, k, seeds)
     rng(seeds(2));
     
     tic;
-    confmat = zeros(cs.n_classes);
+    confmat_train = zeros(cs.n_classes);
+    confmat_test = zeros(cs.n_classes);
     for i=1:k;
         models = train(features(train_masks(i, :) == 1), labels(train_masks(i, :) == 1));
-        confmat = confmat + test(models, features(train_masks(i, :) == 0), labels(train_masks(i, :) == 0));
-        toc
+        confmat_train = confmat_train + test(models, features(train_masks(i, :) == 1), labels(train_masks(i, :) == 1));
+        confmat_test = confmat_test + test(models, features(train_masks(i, :) == 0), labels(train_masks(i, :) == 0));
     end;
     
-    report = confmat;
+    report = struct();
+    report.confmat_train = confmat_train;
+    report.confmat_test = confmat_test;
 end
 
 function [ report ] = confmat2report(confmat) 
