@@ -45,18 +45,21 @@ function [confmat] = test(models, features, labels)
     end;
 end
 
-function [confmat] = random_benchmark(features, labels, train_percent)
+function [confmat_test, confmat_train] = random_benchmark(features, labels, train_percent, seed)
+    rng(seed);
     train_indices = binornd(1, train_percent, 1, length(features));
     models = train(features(train_indices == 1), labels(train_indices == 1));
-    confmat = test(models, features(train_indices == 0), labels(train_indices == 0));
+    confmat_test = test(models, features(train_indices == 0), labels(train_indices == 0));
+    confmat_train = test(models, features(train_indices == 1), labels(train_indices == 1));
 end
  
 function [ report ] = confmat2report(confmat) 
-    total = sum(confmat(1, :));
-    accuracy = diag(confmat) / total;
+    total = sum(confmat, 2);
+    accuracy = diag(confmat) ./ total;
+    average_accuracy = sum(diag(confmat)) / sum(total);
     report = struct('confmat', confmat,...
                     'clacc', accuracy,...
                     'clerr', 1 - accuracy,...
-                    'avacc', mean(accuracy),...
-                    'averr', 1 - mean(accuracy));
+                    'avacc', average_accuracy,...
+                    'averr', 1 - average_accuracy);
 end
