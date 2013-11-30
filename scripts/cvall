@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+set -x
+
+NST=4 ./cv
+NST=5 ./cv
+NST=6 ./cv
+NST=7 ./cv
+NST=8 ./cv
+NST=9 ./cv
+NCMP=4 ./cv
+NCMP=5 ./cv
+NCMP=6 ./cv
+NCMP=7 ./cv
+NCMP=8 ./cv
+NCMP=9 ./cv
+
+NST=10 NCMP=10 EPS=1e-3 ./cv

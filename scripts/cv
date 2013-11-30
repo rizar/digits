@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+[ -z $NST ] && NST=3
+[ -z $NCMP ] && NCMP=3
+[ -z $EPS ] && EPS='1e-2'
+
+set -u
+
+PARAMS="$NST"_"$NCMP"_"$EPS"
+SAVE=logs/ws_"$PARAMS".mat
+LOG=logs/log_"$PARAMS"
+
+CMD=\
+"path(path,'src'); "\
+"global n_states; n_states=$NST; "\
+"global n_components; n_components=$NCMP; "\
+"global hmm_epsilon; hmm_epsilon=$EPS; "\
+"save('$SAVE'); runcv; exit; "
+
+MATLAB=/home/rizar/Dist/matlab2013a/bin/matlab
+$MATLAB -nojvm -nodisplay -nosplash\
+    -r "$CMD"\
+    > $LOG
+
+wait
