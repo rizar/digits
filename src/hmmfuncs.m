@@ -9,6 +9,7 @@ function [functions] = hmmfuncs()
                        'state_likelihood', @state_likelihood,...
                        'sequence_log_likelihood', @sequence_log_likelihood,...
                        'n_sequences_log_likelihood', @n_sequences_log_likelihood,...
+                       'max_log_likelihood', @max_log_likelihood,...
                        'forward_procedure', @forward_procedure,...
                        'backward_procedure', @backward_procedure,...
                        'improve_model', @improve_model,...
@@ -199,6 +200,29 @@ function [prefix_probs, scalers] = forward_procedure(model, outputs)
         scalers(t) = 1 / sum(prefix_probs(t, :));
         prefix_probs(t, :) = prefix_probs(t, :) .* scalers(t);
     end;
+end
+
+function [res] = max_log_likelihood(model, outputs)
+    len = size(outputs, 2);
+    n_states = size(model.transitions, 1);
+    
+    log_likes = log(model_likelihoods(model, outputs'));
+    log_transitions = log(model.transitions);
+    
+    max_likes = -1e100 * ones(len, n_states);
+    max_likes(1, 1) = log_likes(1, 1);
+    
+    for t=2:len;
+        for j=1:n_states;
+            for i=1:n_states;
+                max_likes(t, j) = max(max_likes(t, j),...
+                    max_likes(t - 1, i) + log_transitions(i, j));
+            end;
+            max_likes(t, j) = max_likes(t, j) + log_likes(j, t);
+        end;
+    end;
+    
+    res = max(max_likes(len, :));
 end
 
 function [suffix_probs] = backward_procedure(model, outputs, scalers)

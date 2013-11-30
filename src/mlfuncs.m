@@ -26,10 +26,9 @@ function [preds] = predict(models, features)
 
     likes = zeros(length(features), length(models));
     for i=1:length(models)
-        likes(:, i) = cellfun(@(outputs)(hmm.sequence_log_likelihood(models{i}, outputs)), features);
+        likes(:, i) = cellfun(@(outputs)(hmm.max_log_likelihood(models{i}, outputs)), features);
     end;
-    
-    
+        
     [~, preds] = max(likes, [], 2);
 end
 
@@ -45,7 +44,7 @@ function [confmat] = test(models, features, labels)
     end;
 end
 
-function [confmat_test, confmat_train] = random_benchmark(features, labels, train_percent, seed)
+function [confmat_test, confmat_train, models] = random_benchmark(features, labels, train_percent, seed)
     rng(seed);
     train_indices = binornd(1, train_percent, 1, length(features));
     models = train(features(train_indices == 1), labels(train_indices == 1));
