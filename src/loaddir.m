@@ -25,13 +25,16 @@ function [ uttrs, features, labels ] = loaddir(path)
     uttrs = uttrs(1:current);
     features = cellfun(@featurize, uttrs, 'UniformOutput', false);
     labels = labels(1:current);
+    
+    sprintf('loaded %d recordings', length(uttrs) / cs.n_classes)
 end
 
 function [features] = featurize(utterance)
     cs = constants();
-    features = zeros(cs.n_features, length(utterance) / cs.window_size);
+    shift = cs.window_size / 2;
+    features = zeros(cs.n_features, length(utterance) / shift);
     for i=1:size(features, 2)
-        features(:, i) = extract(utterance(cs.window_size * (i - 1) + 1:cs.window_size * i), 0, 0);
+        features(:, i) = extract(utterance(shift * (i - 1) + 1:shift * i), 0, 0);
     end;
 end
 
