@@ -17,6 +17,8 @@ function [ digits ] = cut(sig)
     digits = cell(1, 11);
     current_digit = 1;
 
+    %TODO: overlapping frames
+    
     for i=1:n_frames;
         if energs(i) < cs.silence_threshold;
             silent_frame_count = silent_frame_count + 1;
@@ -33,14 +35,11 @@ function [ digits ] = cut(sig)
                     finish = min(length(sig), (last_sound + cs.margin) * cs.window_size);
                     segment_length = finish - start + 1;
                     
-                    % sprintf('%d %d', (start - 1) / cs.window_size, finish / cs.window_size)
-                    
-                    if segment_length <= 4;
-                        error(sprintf('%d frames is too short for digit', segment_length));
+                    energy = norm(sig(start:finish), 2);
+                    if energy > 0.5 && segment_length > 5 * cs.window_size && max(abs(sig(start:finish))) > 0.05;
+                        digits{current_digit} = sig(start:finish);
+                        current_digit = current_digit + 1;
                     end;
-                    
-                    digits{current_digit} = sig(start:finish);
-                    current_digit = current_digit + 1;
                 end;
                 state = 0;
             end;
@@ -70,6 +69,9 @@ function [ digits ] = cut(sig)
             silent_frame_count = 0;
             state = 1;
         end;
+    end;
+    if silent_frame_count < cs.min_frames_beetween_digits;
+        error('not enough silence in the end of the utterance');
     end;
     if current_digit <= 11
         error('not all digits were found');
