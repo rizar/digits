@@ -300,6 +300,9 @@ function [result] = improve_model(model, all_outputs)
         component_likes = model_component_likelihoods(model, outputs');
         
         for t=1:size(outputs, 2);
+            pattern = zeros(1, n_components, n_features);
+            replicated = repmat(outputs(:, t)', n_components, 1);
+            
             for i=1:n_states;
                 state_prob = prefix_probs(t, i) * suffix_probs(t, i) / scalers(t);
                 assert(-1e-7 <= state_prob && state_prob <= 1 + 1e-7);
@@ -310,13 +313,11 @@ function [result] = improve_model(model, all_outputs)
                 component_probs = component_probs ./ sum(component_probs);
                 state_component_expect(i, :) = state_component_expect(i, :) + state_prob * component_probs;
              
-                weighted = bsxfun(@times, repmat(outputs(:, t)', n_components, 1), component_probs');
-                state_component_feature_sum(i, :, :) = state_component_feature_sum(i, :, :) +...
-                    shiftdim(state_prob * weighted, -1);
-                
-                weighted_squares = bsxfun(@times, repmat(outputs(:, t)' .^ 2, n_components, 1), component_probs');
-                state_component_feature_square_sum(i, :, :) = state_component_feature_square_sum(i, :, :) +...
-                    shiftdim(state_prob * weighted_squares, -1);
+                pattern(1, :, :) = state_prob * bsxfun(@times, replicated, component_probs');
+                state_component_feature_sum(i, :, :) = state_component_feature_sum(i, :, :) + pattern;
+                                  
+                pattern(1, :, :) = state_prob * bsxfun(@times, replicated .^ 2, component_probs');
+                state_component_feature_square_sum(i, :, :) = state_component_feature_square_sum(i, :, :) + pattern;
                                    
                 if t + 1 <= size(outputs, 2);
                     for j=1:n_states;
