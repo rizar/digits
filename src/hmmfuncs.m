@@ -124,44 +124,68 @@ function [models] = generate_models(n_models, n_states, n_components, n_features
     end;    
 end
 
-function [res] = likelihoods(means, variances, output)
+function [res] = likelihoods(means, variances, outputs)
     n_components = size(means, 1);
+    seq_length = size(outputs, 1);
     
-    res = zeros(1, n_components);
+    res = zeros(seq_length, n_components);
     for i=1:n_components;
-        centered = output - means(i, :);
-        dist2 = sum(centered .^ 2 ./ variances(i, :));
-        res(i) = exp(-0.5 * dist2) / sqrt(2 * pi * prod(variances(i, :)));
+        centered = bsxfun(@minus, outputs, means(i, :));
+        dist2 = sum(bsxfun(@rdivide, centered .^ 2, variances(i, :)), 2);
+        res(:, i) = exp(-0.5 * dist2) / sqrt(2 * pi * prod(variances(i, :)));
     end;
-    assert(all(-1e-7 <= res));
+    assert(all(all(-1e-7 <= res)));
  end
 
-function [res] = mixture_likelihood(probs, means, variances, output)
-    likes = likelihoods(means, variances, output);
-    res = sum(probs .* likes);
+function [res] = mixture_likelihood(probs, means, variances, outputs)
+    likes = likelihoods(means, variances, outputs);
+    res = sum(bsxfun(@times, likes, probs), 2);
 end
 
-function [res] = state_likelihood(model, state, output)
+function [res] = state_likelihood(model, state, outputs)
     res = mixture_likelihood(model.mixtures(state, :),...
                 squeeze(model.means(state, :, :)),...
                 squeeze(model.variances(state, :, :)),...
-                output);
+                outputs);
 end
 
-function [res] = state_component_likelihoods(model, state, output)
+function [res] = state_component_likelihoods(model, state, outputs)
     res = likelihoods(squeeze(model.means(state, :, :)),...
                 squeeze(model.variances(state, :, :)),...
-                output);
+                outputs);
+end
+
+function [res] = model_likelihoods(model, outputs)  
+    n_states = size(model.transitions, 1);
+    seq_length = size(outputs, 1);
+    res = zeros(n_states, seq_length);
+    
+    for i=1:n_states;
+        res(i, :) = state_likelihood(model, i, outputs)';
+    end;
+end
+
+function [res] = model_component_likelihoods(model, outputs)
+    n_states = size(model.transitions, 1);
+    n_components = size(model.mixtures, 2);
+    seq_length = size(outputs, 1);
+    res = zeros(n_states, seq_length, n_components);
+    
+    for i=1:n_states
+        res(i, :, :) = state_component_likelihoods(model, i, outputs);
+    end;
 end
 
 function [prefix_probs, scalers] = forward_procedure(model, outputs)
     len = size(outputs, 2);
     n_states = size(model.transitions, 1);
     
+    likes = model_likelihoods(model, outputs');
+    
     prefix_probs = zeros(len, n_states);    
     prefix_probs(1, 1) = 1;
     scalers = zeros(len, 1);
-    scalers(1) = 1 / state_likelihood(model, 1, outputs(:, 1)');
+    scalers(1) = 1 / likes(1, 1);
     
     for t=2:len;
         for j=1:n_states;
@@ -169,7 +193,7 @@ function [prefix_probs, scalers] = forward_procedure(model, outputs)
                 prefix_probs(t, j) = prefix_probs(t, j) +...
                     prefix_probs(t - 1, i) * model.transitions(i, j);
             end;
-            prefix_probs(t, j) = prefix_probs(t, j) * state_likelihood(model, j, outputs(:, t)');
+            prefix_probs(t, j) = prefix_probs(t, j) * likes(j, t);
         end;
         
         scalers(t) = 1 / sum(prefix_probs(t, :));
@@ -181,6 +205,8 @@ function [suffix_probs] = backward_procedure(model, outputs, scalers)
     len = size(outputs, 2);
     n_states = size(model.transitions, 1);
     
+    likes = model_likelihoods(model, outputs');
+    
     suffix_probs = zeros(len, n_states);
     suffix_probs(len, :) = scalers(len);
     
@@ -188,7 +214,7 @@ function [suffix_probs] = backward_procedure(model, outputs, scalers)
         for i=1:n_states;
             for j=1:n_states;
                 suffix_probs(t, i) = suffix_probs(t, i) +...
-                    model.transitions(i, j) * state_likelihood(model, j, outputs(:, t + 1)')...
+                    model.transitions(i, j) * likes(j, t + 1)...
                     * suffix_probs(t + 1, j);
             end;
         end;
@@ -270,6 +296,9 @@ function [result] = improve_model(model, all_outputs)
         [prefix_probs, scalers] = forward_procedure(model, outputs);
         suffix_probs = backward_procedure(model, outputs, scalers);
         
+        likes = model_likelihoods(model, outputs');
+        component_likes = model_component_likelihoods(model, outputs');
+        
         for t=1:size(outputs, 2);
             for i=1:n_states;
                 state_prob = prefix_probs(t, i) * suffix_probs(t, i) / scalers(t);
@@ -277,7 +306,7 @@ function [result] = improve_model(model, all_outputs)
                 
                 state_expect(i) = state_expect(i) + state_prob;
                                 
-                component_probs = state_component_likelihoods(model, i, outputs(:, t)');
+                component_probs = reshape(component_likes(i, t, :), 1, n_components);
                 component_probs = component_probs ./ sum(component_probs);
                 state_component_expect(i, :) = state_component_expect(i, :) + state_prob * component_probs;
              
@@ -293,7 +322,7 @@ function [result] = improve_model(model, all_outputs)
                     for j=1:n_states;
                         transition_expect(i, j) = transition_expect(i, j) +...
                             prefix_probs(t, i) * suffix_probs(t + 1, j) *...
-                            model.transitions(i, j) * state_likelihood(model, j, outputs(:, t + 1)');
+                            model.transitions(i, j) * likes(j, t + 1);
                     end;
                 else
                     last_expect(i) = last_expect(i) + state_prob;
