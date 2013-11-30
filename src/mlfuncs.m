@@ -44,12 +44,25 @@ function [confmat] = test(models, features, labels)
     end;
 end
 
-function [confmat_test, confmat_train, models] = random_benchmark(features, labels, train_percent, seed)
-    rng(seed);
-    train_indices = binornd(1, train_percent, 1, length(features));
-    models = train(features(train_indices == 1), labels(train_indices == 1));
-    confmat_test = test(models, features(train_indices == 0), labels(train_indices == 0));
-    confmat_train = test(models, features(train_indices == 1), labels(train_indices == 1));
+function [confmat_test, confmat_train, models] = random_benchmark(features, labels, train_percent, seeds)
+    rng(seeds(1));
+
+    cs = constants();
+    from_each = floor(length(features) * train_percent / cs.n_classes);
+    
+    train_mask = zeros(1, length(features));
+    for y=1:cs.n_classes;
+        y_indices = find(labels == y);
+        p = randperm(length(y_indices));
+        train_mask(y_indices(p(1:from_each))) = 1;
+    end;
+    sprintf('train size %d', sum(train_mask))
+          
+    rng(seeds(2));
+    
+    models = train(features(train_mask == 1), labels(train_mask == 1));
+    confmat_test = test(models, features(train_mask == 0), labels(train_mask == 0));
+    confmat_train = test(models, features(train_mask == 1), labels(train_mask == 1));
 end
  
 function [ report ] = confmat2report(confmat) 
