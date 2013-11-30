@@ -9,6 +9,21 @@ function [ values ] = constants()
                     'max_silent_frames_in_digit', 5,...
                     'n_states', 3,...
                     'n_components', 3,...
-                    'hmm_epsilon', 1e-3);
+                    'hmm_epsilon', 1e-2);
+                
+    global n_states;
+    if ~isempty(n_states);
+        values.n_states = n_states;
+    end;
+    
+    global n_components;
+    if ~isempty(n_components);
+        values.n_components = n_components;
+    end;
+    
+    global hmm_epsilon;
+    if ~isempty(hmm_epsilon);
+        values.hmm_epsilon = hmm_epsilon;
+    end;
 end
 
