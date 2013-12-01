@@ -1,19 +1,7 @@
-hmm = hmmfuncs();
-ml = mlfuncs();
-constants()
+function [reports] = runcv(sounds_path, times)
+    hmm = hmmfuncs();
+    ml = mlfuncs();
 
-[utters3, features3, labels3] = loaddir('sounds3');
-
-accs = [];
-for t=1:10;
-    cms = ml.cross_validate(features3, labels3, 4, [t t]);
-    rp_train = ml.confmat2report(cms.confmat_train);
-    rp_test = ml.confmat2report(cms.confmat_test);
-    
-    accs(t) = rp_test.avacc;
-    sprintf('ACC: %f', rp_test.avacc)
-    sprintf('OVERFIT: %f', rp_train.avacc)
-    
-    [~, ~, ci, ~] = normfit(accs(1:t));
-    sprintf('CI: %f %f', ci)
-end;
+    [utters, features, labels] = loaddir(sounds_path);
+    reports = ml.cross_validate_times(features, labels, 4, times);
+end
