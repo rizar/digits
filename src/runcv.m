@@ -1,7 +1,5 @@
 hmm = hmmfuncs();
 ml = mlfuncs();
-global g_n_states;
-g_n_states = 3;
 constants()
 
 [utters3, features3, labels3] = loaddir('sounds3');
