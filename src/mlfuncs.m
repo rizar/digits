@@ -1,47 +1,87 @@
 function [functions] = mlfuncs()
-    functions = struct('train', @train,...
+    functions = struct('normalizing_transform', @normalizing_transform,...
+                       'apply_transform', @apply_transform,...
+                       'train', @train,...
                        'predict', @predict,...
                        'test', @test,...
                        'random_benchmark', @random_benchmark,...
                        'confmat2report', @confmat2report,...
-                       'cross_validate', @cross_validate);
+                       'cross_validate', @cross_validate,...
+                       'cross_validate_times', @cross_validate_times);
 end
 
-function [models] = train(features, labels)
+function [transform] = identity(features)
+    n_features = size(features{1}, 1);
+    transform = struct();
+    transform.translate = zeros(n_features, 1);
+    transform.scale = diag(ones(n_features, 1));
+end
+
+function [transform] = normalizing_transform(features)
+    data = [features{:}];
+
+    transform = struct();
+    transform.translate = -mean(data, 2);
+    transform.scale = diag(1 ./ std(data, 0, 2));
+end
+
+function [result] = apply_transform(t, features)
+    result = cellfun(@(outputs)(...
+            t.scale * (outputs + repmat(t.translate, 1, size(outputs, 2)))...
+        ), features, 'UniformOutput', false);
+end
+
+function [classifier] = train(features, labels)
     hmm = hmmfuncs();
     cs = constants();
 
     classes = unique(sort(labels));
     models = cell(1, length(classes));
     
+    if cs.do_normalize_features == 1;
+        transform = normalizing_transform(features);
+    else;
+        transform = identity(features);
+    end;
+        
+    normalized = apply_transform(transform, features);
+    
     for i=1:length(classes);
         y = classes(i);
-        data = features(labels == y);
+        data = normalized(labels == y);
         models{i} = hmm.naive_model(cs.n_states, cs.n_components, data);
         models{i} = hmm.improve_model_until(models{i}, data, cs.hmm_epsilon);
     end;
+    
+    classifier = struct();
+    classifier.models = models;
+    classifier.transform = transform;
 end
 
-function [preds] = predict(models, features)
+function [preds] = predict(classifier, features)
     hmm = hmmfuncs();
+    
+    n_models = length(classifier.models);
 
-    likes = zeros(length(features), length(models));
-    for i=1:length(models)
-        likes(:, i) = cellfun(@(outputs)(hmm.max_log_likelihood(models{i}, outputs)), features);
+    likes = zeros(length(features), n_models);
+    for i=1:n_models;
+        likes(:, i) = cellfun(@(outputs)(...
+            hmm.max_log_likelihood(classifier.models{i}, outputs)...
+            ), apply_transform(classifier.transform, features));
     end;
         
     [~, preds] = max(likes, [], 2);
 end
 
 function [confmat] = test(models, features, labels) 
+    cs = constants();
     classes = unique(sort(labels));
-    k = length(classes);
     
-    confmat = zeros(k, k);
+    confmat = zeros(cs.n_classes, cs.n_classes);
     preds = predict(models, features);
     
     for i=1:length(preds)
-        confmat(labels(i), preds(i)) = confmat(labels(i), preds(i)) + 1;
+        confmat(labels(i), classes(preds(i))) = confmat(labels(i), classes(preds(i))) + 1;
     end;
 end
 
@@ -59,7 +99,6 @@ function [report] = random_benchmark(features, labels, train_percent, seeds)
         p = randperm(length(y_indices));
         train_mask(y_indices(p(1:from_each))) = 1;
     end;
-    sprintf('train size %d', sum(train_mask))
           
     rng(seeds(2));
     
@@ -93,7 +132,6 @@ function [report] = cross_validate(features, labels, k, seeds)
         end;
     end;
     assert(all(sum(train_masks, 1) == (k - 1) * ones(1, length(features))));
-    sprintf(num2str(sum(train_masks, 2)'))
              
     % Train and test
     rng(seeds(2));
@@ -108,11 +146,20 @@ function [report] = cross_validate(features, labels, k, seeds)
     end;
     
     report = struct();
-    report.confmat_train = confmat_train;
-    report.confmat_test = confmat_test;
+    report.train = confmat2report(confmat_train);
+    report.test = confmat2report(confmat_test);
 end
 
-function [ report ] = confmat2report(confmat) 
+function [reports] = cross_validate_times(features, labels, k, times)
+    constants()
+
+    reports = struct('train', [], 'test', []);
+    for t=1:times;
+        reports(t) = cross_validate(features, labels, k, [t t]);
+    end;
+end
+
+function [report] = confmat2report(confmat) 
     total = sum(confmat, 2);
     accuracy = diag(confmat) ./ total;
     average_accuracy = sum(diag(confmat)) / sum(total);
