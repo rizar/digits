@@ -1,6 +1,7 @@
 function [functions] = mlfuncs()
     functions = struct('normalizing_transform', @normalizing_transform,...
                        'apply_transform', @apply_transform,...
+                       'pca_transform', @pca_transform,...
                        'train', @train,...
                        'predict', @predict,...
                        'test', @test,...
@@ -12,6 +13,7 @@ end
 
 function [transform] = identity(features)
     n_features = size(features{1}, 1);
+    
     transform = struct();
     transform.translate = zeros(n_features, 1);
     transform.scale = diag(ones(n_features, 1));
@@ -23,6 +25,16 @@ function [transform] = normalizing_transform(features)
     transform = struct();
     transform.translate = -mean(data, 2);
     transform.scale = diag(1 ./ std(data, 0, 2));
+end
+
+function [transform] = pca_transform(features)
+    n_features = size(features{1}, 1);
+    data = [features{:}];
+    
+    transform = struct();
+    transform.translate = zeros(n_features, 1);
+    coeff = pca(data');
+    transform.scale = [coeff(:, 1)'; coeff(:, 2)'];
 end
 
 function [result] = apply_transform(t, features)
@@ -144,18 +156,31 @@ function [report] = cross_validate(features, labels, k, seeds)
         confmat_train = confmat_train + test(models, features(train_masks(i, :) == 1), labels(train_masks(i, :) == 1));
         confmat_test = confmat_test + test(models, features(train_masks(i, :) == 0), labels(train_masks(i, :) == 0));
     end;
+    toc
     
     report = struct();
     report.train = confmat2report(confmat_train);
     report.test = confmat2report(confmat_test);
+    report.test
 end
 
-function [reports] = cross_validate_times(features, labels, k, times)
+function [reports] = cross_validate_times(features, labels, k, times, digits)
     constants()
 
+    fs = features;
+    ls = labels;
+    if exist('digits', 'var')
+        mask = false(length(labels), 1);
+        for i=1:length(digits);
+            mask = mask | (labels == digits(i));
+        end;
+        fs = features(mask);
+        ls = labels(mask);
+    end;
+    
     reports = struct('train', [], 'test', []);
     for t=1:times;
-        reports(t) = cross_validate(features, labels, k, [t t]);
+        reports(t) = cross_validate(fs, ls, k, [t t]);
     end;
 end
 
