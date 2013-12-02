@@ -148,7 +148,7 @@ function [report] = cross_validate(features, labels, k, seeds)
     % Train and test
     rng(seeds(2));
     
-    tic;
+    t_start = tic;
     confmat_train = zeros(cs.n_classes);
     confmat_test = zeros(cs.n_classes);
     for i=1:k;
@@ -156,7 +156,7 @@ function [report] = cross_validate(features, labels, k, seeds)
         confmat_train = confmat_train + test(models, features(train_masks(i, :) == 1), labels(train_masks(i, :) == 1));
         confmat_test = confmat_test + test(models, features(train_masks(i, :) == 0), labels(train_masks(i, :) == 0));
     end;
-    toc
+    toc(t_start)
     
     report = struct();
     report.train = confmat2report(confmat_train);
