@@ -388,13 +388,14 @@ function [res] = improve_model_until(model, data, epsilon, n_iters)
         n_iters = 1000;
     end;
     
-    cur_quality = n_sequences_log_likelihood(model, data)
+    cur_quality = n_sequences_log_likelihood(model, data);
     res = model;
     while n_iters > 0;
         res = improve_model(res, data);
-        new_quality = n_sequences_log_likelihood(res, data)
+        new_quality = n_sequences_log_likelihood(res, data);
         
         if abs(new_quality - cur_quality) / abs(cur_quality) < epsilon;
+            res.log_likelihood = new_quality;
             break;
         end;
         
