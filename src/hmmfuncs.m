@@ -301,6 +301,8 @@ function [result] = naive_model(n_states, n_components, all_outputs)
 end
 
 function [result] = improve_model(model, all_outputs)
+    tic;
+
     n_states = size(model.transitions, 1);
     n_components = size(model.mixtures, 2);
     n_features = size(model.means, 3);
@@ -317,16 +319,23 @@ function [result] = improve_model(model, all_outputs)
     
     for k=1:size(all_outputs, 1);
         outputs = all_outputs{k};
+        n_outputs = size(outputs, 2);
+        
         [prefix_probs, scalers] = forward_procedure(model, outputs);
         suffix_probs = backward_procedure(model, outputs, scalers);
         
         likes = model_likelihoods(model, outputs');
         component_likes = model_component_likelihoods(model, outputs');
         
+        replicated = zeros(n_components, n_features, n_outputs);
+        for j=1:n_components;
+            replicated(j, :, :) = outputs;
+        end;
+        replicated2 = replicated .^ 2;
+        
         for t=1:size(outputs, 2);
             pattern = zeros(1, n_components, n_features);
-            replicated = repmat(outputs(:, t)', n_components, 1);
-            
+                                
             for i=1:n_states;
                 state_prob = prefix_probs(t, i) * suffix_probs(t, i) / scalers(t);
                 assert(-1e-7 <= state_prob && state_prob <= 1 + 1e-7);
@@ -334,13 +343,13 @@ function [result] = improve_model(model, all_outputs)
                 state_expect(i) = state_expect(i) + state_prob;
                                 
                 component_probs = reshape(component_likes(i, t, :), 1, n_components);
-                component_probs = component_probs ./ sum(component_probs);
-                state_component_expect(i, :) = state_component_expect(i, :) + state_prob * component_probs;
+                component_probs = state_prob * component_probs ./ sum(component_probs);
+                state_component_expect(i, :) = state_component_expect(i, :) + component_probs;
              
-                pattern(1, :, :) = state_prob * bsxfun(@times, replicated, component_probs');
+                pattern(1, :, :) = bsxfun(@times, replicated(:, :, t), component_probs');
                 state_component_feature_sum(i, :, :) = state_component_feature_sum(i, :, :) + pattern;
                                   
-                pattern(1, :, :) = state_prob * bsxfun(@times, replicated .^ 2, component_probs');
+                pattern(1, :, :) = bsxfun(@times, replicated2(:, :, t), component_probs');
                 state_component_feature_square_sum(i, :, :) = state_component_feature_square_sum(i, :, :) + pattern;
                                    
                 if t + 1 <= size(outputs, 2);
@@ -377,6 +386,8 @@ function [result] = improve_model(model, all_outputs)
                             result.means .^ 2 + ones(n_states, n_components, n_features) * ip.variance_smoother;
                         
     check_model(result);
+    
+    toc
 end
 
 function [res] = improve_model_until(model, data, epsilon, n_iters)
@@ -390,7 +401,8 @@ function [res] = improve_model_until(model, data, epsilon, n_iters)
     
     cur_quality = n_sequences_log_likelihood(model, data);
     res = model;
-    while n_iters > 0;
+    cur_it = 0;
+    while cur_it < n_iters;
         res = improve_model(res, data);
         new_quality = n_sequences_log_likelihood(res, data);
         
@@ -401,7 +413,12 @@ function [res] = improve_model_until(model, data, epsilon, n_iters)
         
         cur_quality = new_quality;
         n_iters = n_iters - 1;
+        
+        cur_it = cur_it + 1;
     end;
+    
+    sprintf('%d frames totally', sum(cellfun(@length, data)))
+    sprintf('%d iterations to converge', cur_it)
 end
 
 function [] = draw_state(model, state, color)
