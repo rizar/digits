@@ -26,7 +26,7 @@ function [features] = extract(signal, use_filtering, all_cepstrum)
     % take some first cepstrum coefficients as features
     params = constants();
     if all_cepstrum == 0; 
-        features = cepstrum(2:params.n_features + 1);
+        features = cepstrum(1:params.n_features);
     else;
         features = cepstrum;
     end
